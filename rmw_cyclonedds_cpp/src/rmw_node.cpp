@@ -3575,7 +3575,7 @@ static rmw_ret_t rmw_take_loan_int(
             RMW_SET_ERROR_MSG("Failed to deserialize sample from shared memory buffer");
             ddsi_serdata_unref(d);
             *taken = false;
-            return RMW_RET_ERROR;
+            goto take_done_err;
           }
         } else if (iox_header->shm_data_state == IOX_CHUNK_CONTAINS_RAW_DATA) {
           *loaned_message = d->iox_chunk;
@@ -3583,7 +3583,7 @@ static rmw_ret_t rmw_take_loan_int(
           RMW_SET_ERROR_MSG("Received iox chunk is uninitialized");
           ddsi_serdata_unref(d);
           *taken = false;
-          return RMW_RET_ERROR;
+          goto take_done_err;
         }
         *taken = true;
         // doesn't allocate, but initialise the allocator to free the chunk later when the loan
@@ -3595,7 +3595,7 @@ static rmw_ret_t rmw_take_loan_int(
         // `rmw_return_loaned_message_from_subscription()` is called
         d->iox_chunk = nullptr;
         ddsi_serdata_unref(d);
-        return RMW_RET_OK;
+        goto take_done;
       } else if (d->type->iox_size > 0U) {
         auto sample_ptr = init_and_alloc_sample(cdds_subscription, d->type->iox_size, true);
         RET_NULL_X(sample_ptr, return RMW_RET_ERROR);
@@ -3603,18 +3603,33 @@ static rmw_ret_t rmw_take_loan_int(
         *loaned_message = sample_ptr;
         ddsi_serdata_unref(d);
         *taken = true;
-        return RMW_RET_OK;
+        goto take_done;
       } else {
         RMW_SET_ERROR_MSG("Data nor loan is available to take");
         ddsi_serdata_unref(d);
         *taken = false;
-        return RMW_RET_ERROR;
+        goto take_done_err;
       }
     }
     ddsi_serdata_unref(d);
   }
   *taken = false;
+take_done:
+  TRACETOOLS_TRACEPOINT(
+    rmw_take,
+    static_cast<const void *>(subscription),
+    static_cast<const void *>(*loaned_message),
+    (message_info ? message_info->source_timestamp : 0LL),
+    *taken);
   return RMW_RET_OK;
+take_done_err:
+  TRACETOOLS_TRACEPOINT(
+    rmw_take,
+    static_cast<const void *>(subscription),
+    static_cast<const void *>(*loaned_message),
+    (message_info ? message_info->source_timestamp : 0LL),
+    *taken);
+  return RMW_RET_ERROR;
 #else
   static_cast<void>(subscription);
   static_cast<void>(loaned_message);
